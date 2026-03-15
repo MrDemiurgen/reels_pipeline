@@ -17,3 +17,7 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Private working files
+input/reels_001/
+output/reels_001.mp4
