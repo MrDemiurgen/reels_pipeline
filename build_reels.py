@@ -92,7 +92,6 @@ def load_rgba(path: str) -> Image.Image:
     ensure_file_exists(path)
     return Image.open(path).convert("RGBA")
 
-
 def fit_image_cover(img: Image.Image, target_size: Tuple[int, int]) -> Image.Image:
     target_w, target_h = target_size
 
@@ -106,6 +105,9 @@ def fit_image_cover(img: Image.Image, target_size: Tuple[int, int]) -> Image.Ima
     canvas.paste(img, (x, y))
 
     return canvas
+
+def fit_image_stretch(img: Image.Image, target_size: Tuple[int, int]) -> Image.Image:
+    return img.resize(target_size, Image.LANCZOS)
 
 
 def add_rounded_corners(img: Image.Image, radius: int) -> Image.Image:
@@ -123,7 +125,7 @@ def add_rounded_corners(img: Image.Image, radius: int) -> Image.Image:
 
 def prepare_card_image(path: str, size: Tuple[int, int]) -> Image.Image:
     img = load_rgba(path)
-    img = fit_image_cover(img, size)
+    img = fit_image_stretch(img, size)
     img = add_rounded_corners(img, CARD_RADIUS)
     return img
 
