@@ -52,8 +52,7 @@ class ReelsApp:
         self.root.title("Reels Pipeline")
         self.root.minsize(520, 520)
         self.root.resizable(True, True)
-
-        self.set_window_geometry(760, 520)
+        self.root.geometry("760x520")
 
         self.input_dir_var = tk.StringVar(value=os.path.join("input", "reels_001"))
         self.background_var = tk.StringVar(value=os.path.join("assets", "background.png"))
@@ -66,6 +65,21 @@ class ReelsApp:
 
         self.total_duration_var = tk.StringVar(value=str(br.TOTAL_DURATION))
         self.reveal_duration_var = tk.StringVar(value=str(br.REVEAL_DURATION))
+        self.parallax_enabled_var = tk.BooleanVar(value=bool(br.PARALLAX_ENABLED))
+        self.parallax_strength_var = tk.StringVar(
+            value=str(max(0.0, min(br.PARALLAX_STRENGTH / 2.0, 1.0)))
+        )
+        self.slow_zoom_enabled_var = tk.BooleanVar(value=bool(br.SLOW_ZOOM_ENABLED))
+        self.slow_zoom_strength_var = tk.StringVar(
+            value=str(max(0.0, min(br.SLOW_ZOOM_STRENGTH / 2.0, 1.0)))
+        )
+        self.exposure_pulse_enabled_var = tk.BooleanVar(value=bool(br.EXPOSURE_PULSE_ENABLED))
+        self.exposure_pulse_strength_var = tk.StringVar(
+            value=str(max(0.0, min(br.EXPOSURE_PULSE_STRENGTH / 2.0, 1.0)))
+        )
+        self.exposure_pulse_speed_var = tk.StringVar(
+            value=str(max(0.0, min(br.EXPOSURE_PULSE_SPEED / 2.0, 1.0)))
+        )
 
         self.card_scale_var = tk.StringVar(value=str(br.CARD_SCALE))
         self.card_radius_var = tk.StringVar(value=str(br.CARD_RADIUS))
@@ -81,19 +95,6 @@ class ReelsApp:
         self.progress_var = tk.IntVar(value=0)
 
         self.build_ui()
-
-    def set_window_geometry(self, width: int, height: int):
-        self.root.update_idletasks()
-
-        screen_w = self.root.winfo_screenwidth()
-        screen_h = self.root.winfo_screenheight()
-
-        taskbar_safe_margin = 80
-
-        x = max((screen_w - width) // 2, 20)
-        y = max((screen_h - height - taskbar_safe_margin) // 2, 20)
-
-        self.root.geometry(f"{width}x{height}+{x}+{y}")
 
     def build_ui(self):
         self.configure_styles()
@@ -236,6 +237,27 @@ class ReelsApp:
 
         self.add_labeled_entry(frame, "Total duration", self.total_duration_var, 0, 0)
         self.add_labeled_entry(frame, "Reveal duration", self.reveal_duration_var, 0, 2)
+        ttk.Checkbutton(
+            frame,
+            text="Parallax (right)",
+            variable=self.parallax_enabled_var,
+        ).grid(row=1, column=0, sticky="w", padx=(0, 8), pady=4)
+        self.add_labeled_entry(frame, "Parallax strength (0-1)", self.parallax_strength_var, 1, 2)
+
+        ttk.Checkbutton(
+            frame,
+            text="Slow zoom",
+            variable=self.slow_zoom_enabled_var,
+        ).grid(row=2, column=0, sticky="w", padx=(0, 8), pady=4)
+        self.add_labeled_entry(frame, "Zoom strength (0-1)", self.slow_zoom_strength_var, 2, 2)
+
+        ttk.Checkbutton(
+            frame,
+            text="Exposure pulse",
+            variable=self.exposure_pulse_enabled_var,
+        ).grid(row=3, column=0, sticky="w", padx=(0, 8), pady=4)
+        self.add_labeled_entry(frame, "Pulse strength (0-1)", self.exposure_pulse_strength_var, 3, 2)
+        self.add_labeled_entry(frame, "Pulse speed (0-1)", self.exposure_pulse_speed_var, 3, 4)
 
     def fill_cards_section(self, parent):
         frame = ttk.Frame(parent, padding=10, style="App.TFrame")
@@ -370,6 +392,19 @@ class ReelsApp:
 
         br.TOTAL_DURATION = float(self.total_duration_var.get())
         br.REVEAL_DURATION = float(self.reveal_duration_var.get())
+        br.PARALLAX_ENABLED = bool(self.parallax_enabled_var.get())
+        parallax_ui_strength = max(0.0, min(float(self.parallax_strength_var.get()), 1.0))
+        br.PARALLAX_STRENGTH = parallax_ui_strength * 2.0
+
+        br.SLOW_ZOOM_ENABLED = bool(self.slow_zoom_enabled_var.get())
+        zoom_ui_strength = max(0.0, min(float(self.slow_zoom_strength_var.get()), 1.0))
+        br.SLOW_ZOOM_STRENGTH = zoom_ui_strength * 2.0
+
+        br.EXPOSURE_PULSE_ENABLED = bool(self.exposure_pulse_enabled_var.get())
+        pulse_ui_strength = max(0.0, min(float(self.exposure_pulse_strength_var.get()), 1.0))
+        br.EXPOSURE_PULSE_STRENGTH = pulse_ui_strength * 2.0
+        pulse_ui_speed = max(0.0, min(float(self.exposure_pulse_speed_var.get()), 1.0))
+        br.EXPOSURE_PULSE_SPEED = pulse_ui_speed * 2.0
 
         br.CARD_SCALE = float(self.card_scale_var.get())
         br.CARD_RADIUS = int(self.card_radius_var.get())

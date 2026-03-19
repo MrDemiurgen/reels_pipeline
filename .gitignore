@@ -21,3 +21,10 @@ Thumbs.db
 # Private working files
 input/reels_001/
 output/reels_001.mp4
+
+# Keep only demo samples in git
+input/reels_*/
+!input/reels_000/
+!input/reels_000/**
+output/reels_*.mp4
+!output/reels_000.mp4

@@ -1,10 +1,11 @@
 import os
 import argparse
+import math
 from dataclasses import dataclass
 from typing import List, Tuple
 
 import numpy as np
-from PIL import Image, ImageOps, ImageDraw
+from PIL import Image, ImageOps, ImageDraw, ImageEnhance
 from moviepy import VideoClip, AudioFileClip
 
 # =========================
@@ -25,7 +26,7 @@ THREADS = 8              # количество потоков рендера
                          # обычно = количеству ядер CPU
                          # можно поставить 6–8 для 8-ядерного процессора
 
-PRESET = "slow"          # баланс скорости кодирования и качества
+PRESET = "medium"        # баланс скорости кодирования и качества
                          # ultrafast — максимально быстро, хуже сжатие
                          # veryfast  — очень быстро
                          # fast      — быстрый рендер
@@ -46,15 +47,22 @@ FPS = 30           # количество кадров в секунду
 # =========================
 
 TOTAL_DURATION = 10.0     # общая длительность ролика в секундах
-REVEAL_DURATION = 8.0     # длительность анимации "проявления" превью
+REVEAL_DURATION = 9.0     # длительность анимации "проявления" превью
+PARALLAX_ENABLED = True
+PARALLAX_STRENGTH = 0.66
+SLOW_ZOOM_ENABLED = True
+SLOW_ZOOM_STRENGTH = 1.0
+EXPOSURE_PULSE_ENABLED = True
+EXPOSURE_PULSE_STRENGTH = 0.15
+EXPOSURE_PULSE_SPEED = 2.0
 
 # =========================
 # CARD VISUAL SETTINGS
 # =========================
 
-CARD_SCALE = 0.78   # ширина карточки относительно ширины видео (0.78 = 78%)
+CARD_SCALE = 0.75   # ширина карточки относительно ширины видео (0.78 = 78%)
 CARD_RADIUS = 36    # радиус скругления углов карточек
-CARD_GAP = 50       # расстояние между карточками по вертикали
+CARD_GAP = 40       # расстояние между карточками по вертикали
 
 def recalculate_layout() -> None:
     global CARD_W, CARD_H, CARD_X, TOTAL_BLOCK_HEIGHT, START_Y, CARD_LAYOUTS
@@ -157,9 +165,74 @@ def build_reveal_card(sketch: Image.Image, result: Image.Image, progress: float)
     return frame
 
 
-def make_frame_factory(background: Image.Image, cards: List[CardPair], progress_callback=None):
-    bg_np = np.array(background.convert("RGBA"))
+def apply_parallax_right(background: Image.Image, t: float, strength: float) -> Image.Image:
+    strength = max(0.0, min(float(strength), 2.0))
+    if strength <= 0.0:
+        return background.copy()
 
+    phase = t / max(TOTAL_DURATION, 0.001)
+    pad_x = max(8, int(VIDEO_W * (0.02 * strength)))
+    extended_bg = background.resize((VIDEO_W + pad_x, VIDEO_H), Image.LANCZOS)
+    max_shift = extended_bg.width - VIDEO_W
+    left = int(max_shift * (1.0 - phase))
+    top = 0
+    return extended_bg.crop((left, top, left + VIDEO_W, top + VIDEO_H))
+
+
+def apply_slow_zoom(background: Image.Image, t: float, strength: float) -> Image.Image:
+    strength = max(0.0, min(float(strength), 2.0))
+    if strength <= 0.0:
+        return background.copy()
+
+    phase = t / max(TOTAL_DURATION, 0.001)
+    zoom = 1.0 + (0.025 * strength * phase)
+    scaled_w = max(VIDEO_W, int(VIDEO_W * zoom))
+    scaled_h = max(VIDEO_H, int(VIDEO_H * zoom))
+    scaled_bg = background.resize((scaled_w, scaled_h), Image.LANCZOS)
+
+    left = (scaled_w - VIDEO_W) // 2
+    top = (scaled_h - VIDEO_H) // 2
+    return scaled_bg.crop((left, top, left + VIDEO_W, top + VIDEO_H))
+
+
+def apply_exposure_pulse(background: Image.Image, t: float, strength: float) -> Image.Image:
+    strength = max(0.0, min(float(strength), 2.0))
+    if strength <= 0.0:
+        return background.copy()
+
+    # Fast flicker: roughly half the time "on", half "off", with softened edges.
+    phase = t / max(TOTAL_DURATION, 0.001)
+    speed = max(0.0, min(float(EXPOSURE_PULSE_SPEED), 2.0))
+    min_hz = 2.0
+    max_hz = max(min_hz, float(FPS))
+    flicker_hz = min_hz + (max_hz - min_hz) * (speed / 2.0)
+    cycle = math.sin(2.0 * math.pi * phase * flicker_hz)
+    pulse = 1.0 if cycle > 0.0 else 0.0
+    pulse = 0.7 * pulse + 0.3 * max(0.0, cycle)
+    brightness = 1.0 + (0.06 * strength) * pulse - (0.01 * strength) * (1.0 - pulse)
+    contrast = 1.0 + (0.09 * strength) * pulse
+
+    frame = ImageEnhance.Brightness(background).enhance(brightness)
+    frame = ImageEnhance.Contrast(frame).enhance(contrast)
+    return frame
+
+
+def render_background_frame(background: Image.Image, t: float) -> Image.Image:
+    frame = background.copy()
+
+    if PARALLAX_ENABLED:
+        frame = apply_parallax_right(frame, t, PARALLAX_STRENGTH)
+
+    if SLOW_ZOOM_ENABLED:
+        frame = apply_slow_zoom(frame, t, SLOW_ZOOM_STRENGTH)
+
+    if EXPOSURE_PULSE_ENABLED:
+        frame = apply_exposure_pulse(frame, t, EXPOSURE_PULSE_STRENGTH)
+
+    return frame
+
+
+def make_frame_factory(background: Image.Image, cards: List[CardPair], progress_callback=None):
     total_frames = max(1, int(TOTAL_DURATION * FPS))
     last_reported_frame = {"value": 0}
 
@@ -173,7 +246,7 @@ def make_frame_factory(background: Image.Image, cards: List[CardPair], progress_
             percent = int((current_frame / total_frames) * 100)
             progress_callback(percent)
 
-        canvas = Image.fromarray(bg_np.copy())
+        canvas = render_background_frame(background, t)
 
         for card in cards:
             reveal_card = build_reveal_card(card.sketch, card.result, progress)
@@ -273,7 +346,57 @@ if __name__ == "__main__":
         help="Путь к итоговому mp4",
     )
 
+    parser.add_argument(
+        "--parallax",
+        action=argparse.BooleanOptionalAction,
+        default=PARALLAX_ENABLED,
+        help="Enable or disable rightward parallax background motion",
+    )
+    parser.add_argument(
+        "--parallax-strength",
+        type=float,
+        default=max(0.0, min(PARALLAX_STRENGTH / 2.0, 1.0)),
+        help="Parallax strength in range 0.0-1.0",
+    )
+    parser.add_argument(
+        "--slow-zoom",
+        action=argparse.BooleanOptionalAction,
+        default=SLOW_ZOOM_ENABLED,
+        help="Enable or disable slow zoom background effect",
+    )
+    parser.add_argument(
+        "--slow-zoom-strength",
+        type=float,
+        default=max(0.0, min(SLOW_ZOOM_STRENGTH / 2.0, 1.0)),
+        help="Slow zoom strength in range 0.0-1.0",
+    )
+    parser.add_argument(
+        "--exposure-pulse",
+        action=argparse.BooleanOptionalAction,
+        default=EXPOSURE_PULSE_ENABLED,
+        help="Enable or disable exposure pulse background effect",
+    )
+    parser.add_argument(
+        "--exposure-pulse-strength",
+        type=float,
+        default=max(0.0, min(EXPOSURE_PULSE_STRENGTH / 2.0, 1.0)),
+        help="Exposure pulse strength in range 0.0-1.0",
+    )
+    parser.add_argument(
+        "--exposure-pulse-speed",
+        type=float,
+        default=max(0.0, min(EXPOSURE_PULSE_SPEED / 2.0, 1.0)),
+        help="Exposure pulse speed in range 0.0-1.0",
+    )
+
     args = parser.parse_args()
+    PARALLAX_ENABLED = bool(args.parallax)
+    PARALLAX_STRENGTH = max(0.0, min(args.parallax_strength, 1.0)) * 2.0
+    SLOW_ZOOM_ENABLED = bool(args.slow_zoom)
+    SLOW_ZOOM_STRENGTH = max(0.0, min(args.slow_zoom_strength, 1.0)) * 2.0
+    EXPOSURE_PULSE_ENABLED = bool(args.exposure_pulse)
+    EXPOSURE_PULSE_STRENGTH = max(0.0, min(args.exposure_pulse_strength, 1.0)) * 2.0
+    EXPOSURE_PULSE_SPEED = max(0.0, min(args.exposure_pulse_speed, 1.0)) * 2.0
 
     build_video(
         input_dir=args.input,
