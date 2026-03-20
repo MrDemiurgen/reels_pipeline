@@ -101,28 +101,27 @@ class ReelsApp:
 
         container = ttk.Frame(self.root, style="App.TFrame")
         container.pack(fill="both", expand=True)
+        container.columnconfigure(0, weight=1)
+        container.rowconfigure(0, weight=1)
 
         self.canvas = tk.Canvas(container, highlightthickness=0, bg=APP_BG)
-        self.scrollbar = ttk.Scrollbar(container, orient="vertical", command=self.canvas.yview)
+        self.v_scrollbar = ttk.Scrollbar(container, orient="vertical", command=self.canvas.yview)
+        self.h_scrollbar = ttk.Scrollbar(container, orient="horizontal", command=self.canvas.xview)
 
         self.scrollable_frame = ttk.Frame(self.canvas, style="App.TFrame")
 
-        self.scrollable_frame.bind(
-            "<Configure>",
-            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
-        )
-
         self.canvas_window = self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
 
-        self.canvas.bind(
-            "<Configure>",
-            lambda e: self.canvas.itemconfig(self.canvas_window, width=e.width)
-        )
+        self.canvas.configure(yscrollcommand=self.v_scrollbar.set, xscrollcommand=self.h_scrollbar.set)
 
-        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+        self.v_scrollbar.grid(row=0, column=1, sticky="ns")
+        self.h_scrollbar.grid(row=1, column=0, sticky="ew")
+        self.v_scrollbar.grid_remove()
+        self.h_scrollbar.grid_remove()
 
-        self.canvas.pack(side="left", fill="both", expand=True)
-        self.scrollbar.pack(side="right", fill="y")
+        self.scrollable_frame.bind("<Configure>", self.on_frame_configure)
+        self.canvas.bind("<Configure>", self.on_canvas_configure)
 
         self.canvas.bind_all("<MouseWheel>", self.on_mousewheel)
 
@@ -134,6 +133,7 @@ class ReelsApp:
         self.create_path_section(main)
         self.create_collapsible_sections(main)
         self.create_actions_section(main)
+        self.root.after_idle(self.update_scrollbars)
 
     def configure_styles(self):
         style = ttk.Style(self.root)
@@ -184,6 +184,47 @@ class ReelsApp:
             return
 
         self.canvas.yview_scroll(delta, "units")
+
+    def on_frame_configure(self, _event):
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        self.update_canvas_window_width()
+        self.update_scrollbars()
+
+    def on_canvas_configure(self, _event):
+        self.update_canvas_window_width()
+        self.update_scrollbars()
+
+    def update_canvas_window_width(self):
+        canvas_w = self.canvas.winfo_width()
+        required_w = self.scrollable_frame.winfo_reqwidth()
+        target_w = max(canvas_w, required_w)
+        self.canvas.itemconfig(self.canvas_window, width=target_w)
+
+    def update_scrollbars(self):
+        self.canvas.update_idletasks()
+        bbox = self.canvas.bbox("all")
+        if not bbox:
+            return
+
+        content_w = bbox[2] - bbox[0]
+        content_h = bbox[3] - bbox[1]
+        canvas_w = self.canvas.winfo_width()
+        canvas_h = self.canvas.winfo_height()
+
+        need_h = content_w > canvas_w + 1
+        need_v = content_h > canvas_h + 1
+
+        if need_h:
+            self.h_scrollbar.grid()
+        else:
+            self.h_scrollbar.grid_remove()
+            self.canvas.xview_moveto(0.0)
+
+        if need_v:
+            self.v_scrollbar.grid()
+        else:
+            self.v_scrollbar.grid_remove()
+            self.canvas.yview_moveto(0.0)
 
     def create_path_section(self, parent):
         frame = ttk.LabelFrame(parent, text="Paths", padding=10)
